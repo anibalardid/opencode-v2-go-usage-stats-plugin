@@ -15,7 +15,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "check": "bun scripts/check.ts"
   },
   "keywords": [
     "opencode",

@@ -19,5 +19,9 @@ export default defineConfig({
     "@opentui/core",
     "@opentui/solid",
     "solid-js",
+    // Lazy-loaded SQLite drivers: `bun:sqlite` is a Bun builtin (not resolvable
+    // by esbuild), `node:sqlite` is the Node fallback.
+    "bun:sqlite",
+    "node:sqlite",
   ],
 })

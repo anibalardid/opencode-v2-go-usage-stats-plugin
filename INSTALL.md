@@ -10,7 +10,7 @@ weekly, monthly).
   opencode2 --version   # prints 2.x
   ```
 - Node.js or Bun (to build the plugin).
-- An OpenCode Go subscription with a valid console session cookie + workspace id.
+- An OpenCode Go subscription, signed in inside OpenCode 2.
 
 > This plugin targets **OpenCode 2** only. It uses the new V2 plugin API
 > (`@opencode/plugin/tui`, `Plugin.define`, `context.ui.slot`). For OpenCode 1,
@@ -51,20 +51,34 @@ The build emits **`tui.js` at the repository root** on purpose: OpenCode 2
 discovers a local plugin *directory* by looking for `tui.ts` / `tui.js` at the
 directory root, not via `package.json` `exports`.
 
-## Credentials setup
+## Credentials
 
-The plugin reads usage from the OpenCode Console JSON API; it needs your console
-session cookie and workspace id.
+Sign in to OpenCode Go inside OpenCode 2 once. The plugin reuses that credential
+(same key the models use), so there is nothing else to configure.
 
-**Option A — env vars:**
+Resolution order, first match wins:
+
+1. `OPENCODE_GO_API_KEY` / `OPENCODE_API_KEY` / `OPENCODE_ZEN_API_KEY`
+2. `apiKey` in `~/.config/opencode/opencode-quota/opencode-go.json`
+3. The `credential` table in `~/.local/share/opencode/opencode.db`
+   (integration `opencode-go`, active row)
+4. `~/.local/share/opencode/auth.json` — legacy store
+5. Console cookie: `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`,
+   then `workspaceId` + `authCookie` in the shared config file
+
+Verify what the plugin sees without opening the TUI:
 
 ```bash
-export OPENCODE_GO_AUTH_COOKIE="your-session-cookie-value"
-export OPENCODE_GO_WORKSPACE_ID="your-workspace-id"
+bun scripts/check.ts
 ```
 
-**Option B — config file:** create
-`~/.config/opencode/opencode-quota/opencode-go.json`:
+It prints the resolved source and the live percentages, never the key.
+
+### Console cookie fallback
+
+Only needed on pre-V2 installs. Grab `__Host-console_session` (`st_...`) from
+DevTools → Application → Cookies → `opencode.ai`, and the `wrk_...` id from
+`https://opencode.ai/console/<workspace>/go`.
 
 ```json
 {
@@ -72,17 +86,6 @@ export OPENCODE_GO_WORKSPACE_ID="your-workspace-id"
   "workspaceId": "wrk_01ABC..."
 }
 ```
-
-### How to get the credentials
-
-1. Open [opencode.ai](https://opencode.ai) and sign in.
-2. Go to `https://opencode.ai/console/<your-workspace>/go`.
-3. DevTools → **Application** (Chrome/Edge) or **Storage** (Firefox) →
-   **Cookies** → `opencode.ai` → copy `__Host-console_session` (a `st_...` token).
-4. Your **workspace id** is the `wrk_...` slug in the URL path.
-
-The `__Host-console_session` cookie expires — when the panel shows `Auth 401/403`,
-re-copy it from DevTools.
 
 ## How to update
 
@@ -107,4 +110,4 @@ rm -rf opencode-v2-go-usage-stats-plugin
 
 - macOS / Linux
 - OpenCode 2 (`opencode2`)
-- An OpenCode Go subscription with a valid console session cookie
+- An OpenCode Go subscription, signed in inside OpenCode 2

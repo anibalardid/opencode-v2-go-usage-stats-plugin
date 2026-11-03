@@ -2,7 +2,12 @@
 
 A sidebar plugin for **OpenCode 2** that shows your **OpenCode Go** subscription
 usage — rolling (5-hour), weekly and monthly windows as a percentage of the plan
-limits — read from the OpenCode Console JSON API.
+limits.
+
+It reuses the **same credential OpenCode already holds for the `opencode-go`
+models** and calls the official usage endpoint, so there is nothing extra to
+configure once you are signed in. A console-cookie transport is kept as a
+fallback.
 
 ```
 ▼ OpenCode Go                    48%
@@ -33,7 +38,7 @@ Verified against OpenCode **2.0.18**.
 - **OpenCode 2** — the terminal CLI (`opencode2`, npm package `@opencode/cli`).
   Check with `opencode2 --version` (prints `2.x`).
 - Node.js or Bun (only to build the plugin).
-- An OpenCode Go subscription with a valid console session cookie + workspace id.
+- An OpenCode Go subscription, signed in inside OpenCode 2.
 
 ## Install
 
@@ -94,65 +99,76 @@ Re-copy after every rebuild (a symlink avoids this step).
 Restart the OpenCode 2 TUI. You'll see an **OpenCode Go** section in the sidebar
 of any session.
 
-## Credentials setup
+## Credentials
 
-The plugin reads your Go usage from the OpenCode Console JSON API. It needs your
-console **session cookie** and **workspace id**.
+Sign in to OpenCode Go inside OpenCode 2 once — the panel reuses that credential.
+Nothing else is required.
 
-**Option A — env vars:**
+Resolution order, first match wins:
 
-```bash
-export OPENCODE_GO_AUTH_COOKIE="your-session-cookie-value"
-export OPENCODE_GO_WORKSPACE_ID="your-workspace-id"
-```
+1. **Environment** — `OPENCODE_GO_API_KEY`, then `OPENCODE_API_KEY`, then
+   `OPENCODE_ZEN_API_KEY`.
+2. **Pinned key** — `field apiKey` in
+   `~/.config/opencode/opencode-quota/opencode-go.json`.
+3. **OpenCode 2 credential store** — the `credential` table in
+   `~/.local/share/opencode/opencode.db` (integration `opencode-go`, active row).
+   This is the same key the models use.
+4. **Legacy store** — `~/.local/share/opencode/auth.json`, entry `opencode-go`
+   then `opencode`. Pre-V2 installs kept the key here; on migrated machines the
+   row is often stale and answers `api_key_expired`.
+5. **Console cookie** — `OPENCODE_GO_WORKSPACE_ID` + `OPENCODE_GO_AUTH_COOKIE`,
+   then `workspaceId` + `authCookie` in the shared config file.
 
-**Option B — config file:** create
-`~/.config/opencode/opencode-quota/opencode-go.json`:
+`XDG_DATA_HOME` and `XDG_CONFIG_HOME` are honoured, and `OPENCODE_GO_ORIGIN`
+overrides the base URL (useful against a mock).
+
+### Pinning a key by hand
+
+Only needed when you want to bypass the OpenCode store:
 
 ```json
 {
-  "authCookie": "st_xxxxxxxx-....",
-  "workspaceId": "wrk_01ABC..."
+  "apiKey": "oc_sk_..."
 }
 ```
 
-### How to get the credentials
+in `~/.config/opencode/opencode-quota/opencode-go.json`.
+
+### Console cookie fallback
+
+The cookie transport still works, it just needs a browser session:
 
 1. Open [opencode.ai](https://opencode.ai) and sign in.
 2. Go to your Go dashboard: `https://opencode.ai/console/<your-workspace>/go`.
-3. Open DevTools (`F12`, or `Cmd+Opt+I` on macOS) → **Application**
-   (Chrome/Edge) or **Storage** (Firefox) → **Cookies** → `opencode.ai`.
-4. Copy the value of the cookie named `__Host-console_session` (a token like
-   `st_xxxxxxxx-....`).
-5. Your **workspace id** is the `wrk_...` slug in the URL path, e.g.
-   `https://opencode.ai/console/wrk_01ABC.../go`.
+3. DevTools → **Application** (Chrome/Edge) or **Storage** (Firefox) →
+   **Cookies** → `opencode.ai` → copy `__Host-console_session` (`st_...`).
+4. Your **workspace id** is the `wrk_...` slug in the URL path.
 
-> The `__Host-console_session` cookie expires after a while. When the panel shows
-> `Auth 401/403`, re-copy it from DevTools.
->
-> The old `auth` cookie (`Fe26.2**...`) and the `/workspace/<id>/go` URL are
-> legacy — the dashboard moved to `/console/<id>/go` and now uses
-> `__Host-console_session`.
+When the panel shows `Auth 401/403`, the cookie expired — re-copy it, or just
+sign in again so the API-key path takes over.
 
 ## How it works
 
-1. Resolves credentials from `OPENCODE_GO_AUTH_COOKIE` +
-   `OPENCODE_GO_WORKSPACE_ID`, then `opencode-go.json`.
-2. Calls the Console JSON API:
+1. Resolves the credential as described above.
+2. Calls the API-key endpoint, which reports percentages directly:
 
    ```
-   GET https://opencode.ai/console/api/go/status
+   GET https://opencode.ai/zen/go/v1/usage
    headers:
-     Cookie: __Host-console_session=<token>
-     x-org-id: <workspaceId>
+     Authorization: Bearer <apiKey>
      Accept: application/json
    ```
 
-   and parses `access.meters.{fiveHour,week,month}` (`usedMicroCents` /
-   `limitMicroCents`; 100,000,000 microcents = 1 USD) plus `resetsAt`
-   (`month` falls back to `access.endsAt`).
+   and reads `usage.{rolling,weekly,monthly}.percent` plus `resetsAt`.
+
+   On the console fallback it calls `GET /console/api/go/status` with
+   `Cookie: __Host-console_session=<token>` and `x-org-id: <workspaceId>`, then
+   derives the percentages from `access.meters.{fiveHour,week,month}`
+   (`usedMicroCents` / `limitMicroCents`; 100,000,000 microcents = 1 USD), with
+   `month` falling back to `access.endsAt`.
 3. Renders the three windows in the `sidebar.content` slot via
-   `context.ui.slot({ append: "sidebar.content", render })`.
+   `context.ui.slot({ append: "sidebar.content", render })`, with the credential
+   source on the last line (`key · opencode auth`).
 4. Refreshes every 3 minutes. On failure it stops the interval and runs a
    **self-healing retry chain** (fast for the first 3 attempts, then at the
    normal cadence forever).
