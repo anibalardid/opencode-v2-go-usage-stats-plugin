@@ -331,22 +331,19 @@ async function fetchUsage(credentials, origin = resolveOrigin()) {
 import { jsx, jsxs } from "@opentui/solid/jsx-runtime";
 var REFRESH_INTERVAL_MS = 18e4;
 var RETRY_DELAYS = [6e4, 6e4, 6e4];
-function barStr(ratio, w) {
-  const filled = Math.round(Math.min(Math.max(ratio, 0), 1) * w);
-  return "\u2588".repeat(Math.max(0, filled)) + "\u2591".repeat(Math.max(0, w - filled));
-}
-function fmtPct(n) {
-  return `${n.toFixed(0)}%`;
-}
-function circle(pct) {
-  return pct >= 80 ? "\u{1F534} " : pct >= 50 ? "\u{1F7E1} " : "";
+var SHORT = {
+  fiveHour: "5h",
+  week: "wk",
+  month: "mo"
+};
+function heat(pct, ok, warn, bad) {
+  if (pct >= 80) return bad;
+  if (pct >= 50) return warn;
+  return ok;
 }
 var tui_default = Plugin.define({
   id: "opencode.go.usage",
   setup(context) {
-    const [prefs, updatePrefs] = context.storage.store("prefs", {
-      initial: { expanded: true }
-    });
     const [state, setState] = createSignal({ kind: "loading" });
     let timerId;
     let retryTimer;
@@ -385,72 +382,24 @@ var tui_default = Plugin.define({
       render: () => {
         const fg = context.theme.text.base;
         const mu = context.theme.text.muted;
-        const warn = context.theme.text.feedback.warning.base;
         const s = state();
-        const e = prefs.expanded;
-        const toggle = () => updatePrefs((draft) => {
-          draft.expanded = !draft.expanded;
-        });
-        if (s.kind === "loading") {
-          return /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "OpenCode Go" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "Loading\u2026" })
-          ] });
+        if (s.kind !== "data") {
+          const text = s.kind === "loading" ? "Go: loading\u2026" : s.kind === "help" ? "Go: not connected" : `Go: ${s.msg}`;
+          return /* @__PURE__ */ jsx("text", { fg: s.kind === "loading" ? mu : context.theme.text.feedback.warning.base, children: text });
         }
-        if (s.kind === "help") {
-          return /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-            /* @__PURE__ */ jsx("text", { fg: warn, children: "\u26A0 OpenCode Go" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "No credential found" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "Sign in: opencode auth" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "or pin it in" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: "opencode-quota/opencode-go.json" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: '  {"apiKey": "oc_sk_\u2026"}' })
-          ] });
-        }
-        if (s.kind === "error") {
-          return /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-            /* @__PURE__ */ jsx("text", { fg: warn, children: "\u26A0 OpenCode Go" }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: s.msg })
-          ] });
-        }
-        const d = s.d;
-        const monthly = d.windows.find((w) => w.key === "month");
-        const monthlyPct = monthly ? monthly.usagePercent : 0;
-        return /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-          /* @__PURE__ */ jsxs("box", { flexDirection: "row", justifyContent: "space-between", onMouseDown: toggle, children: [
+        return /* @__PURE__ */ jsxs("box", { flexDirection: "row", children: [
+          /* @__PURE__ */ jsx("text", { fg, children: "Go" }),
+          s.d.windows.map((w, i) => /* @__PURE__ */ jsxs("box", { flexDirection: "row", children: [
+            /* @__PURE__ */ jsx("text", { fg: mu, children: i === 0 ? " " : " \xB7 " }),
+            /* @__PURE__ */ jsx("text", { fg: heat(w.usagePercent, context.theme.text.feedback.success.base, context.theme.text.feedback.warning.base, context.theme.text.feedback.error.base), children: "\u25CF" }),
             /* @__PURE__ */ jsxs("text", { fg, children: [
-              e ? "\u25BC" : "\u25B6",
-              " OpenCode Go"
-            ] }),
-            /* @__PURE__ */ jsx("text", { fg: mu, children: fmtPct(monthlyPct) })
-          ] }),
-          e && /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-            d.windows.map((w) => /* @__PURE__ */ jsxs("box", { flexDirection: "column", children: [
-              /* @__PURE__ */ jsxs("box", { flexDirection: "row", justifyContent: "space-between", children: [
-                /* @__PURE__ */ jsxs("text", { fg, children: [
-                  circle(w.usagePercent),
-                  w.label
-                ] }),
-                /* @__PURE__ */ jsxs("text", { fg, children: [
-                  fmtPct(w.usagePercent),
-                  " used"
-                ] })
-              ] }),
-              /* @__PURE__ */ jsxs("text", { fg, children: [
-                barStr(w.usagePercent / 100, 8),
-                " ",
-                fmtPct(w.usagePercent)
-              ] }),
-              /* @__PURE__ */ jsxs("text", { fg: mu, children: [
-                "Reset ",
-                w.resetText
-              ] })
-            ] })),
-            /* @__PURE__ */ jsxs("text", { fg: mu, children: [
-              "key \xB7 ",
-              s.source
+              " ",
+              SHORT[w.key],
+              " ",
+              Math.round(w.usagePercent),
+              "%"
             ] })
-          ] })
+          ] }))
         ] });
       }
     });

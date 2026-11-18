@@ -17,19 +17,16 @@ import { fetchUsage, type GoUsageData } from "./usage"
 const REFRESH_INTERVAL_MS = 180_000
 const RETRY_DELAYS = [60_000, 60_000, 60_000] as const
 
-// ── Formatting helpers ───────────────────────────────────────────────────────
-function barStr(ratio: number, w: number): string {
-  const filled = Math.round(Math.min(Math.max(ratio, 0), 1) * w)
-  return "█".repeat(Math.max(0, filled)) + "░".repeat(Math.max(0, w - filled))
+const SHORT: Record<GoUsageData["windows"][number]["key"], string> = {
+  fiveHour: "5h",
+  week: "wk",
+  month: "mo",
 }
 
-function fmtPct(n: number): string {
-  return `${n.toFixed(0)}%`
-}
-
-// Yellow ≥ 50%, red ≥ 80% (user preference for usage plugins).
-function circle(pct: number): string {
-  return pct >= 80 ? "🔴 " : pct >= 50 ? "🟡 " : ""
+function heat<T>(pct: number, ok: T, warn: T, bad: T): T {
+  if (pct >= 80) return bad
+  if (pct >= 50) return warn
+  return ok
 }
 
 // ── Plugin ───────────────────────────────────────────────────────────────────
@@ -43,11 +40,6 @@ export default Plugin.define({
   id: "opencode.go.usage",
 
   setup(context) {
-    // Durable UI preference (survives restarts, syncs across TUI instances).
-    const [prefs, updatePrefs] = context.storage.store("prefs", {
-      initial: { expanded: true },
-    })
-
     const [state, setState] = createSignal<State>({ kind: "loading" })
 
     let timerId: ReturnType<typeof setInterval> | undefined
@@ -100,76 +92,21 @@ export default Plugin.define({
       render: () => {
         const fg = context.theme.text.base
         const mu = context.theme.text.muted
-        const warn = context.theme.text.feedback.warning.base
         const s = state()
-        const e = prefs.expanded
-
-        const toggle = () =>
-          updatePrefs((draft) => {
-            draft.expanded = !draft.expanded
-          })
-
-        if (s.kind === "loading") {
-          return (
-            <box flexDirection="column">
-              <text fg={mu}>OpenCode Go</text>
-              <text fg={mu}>Loading…</text>
-            </box>
-          )
+        if (s.kind !== "data") {
+          const text = s.kind === "loading" ? "Go: loading…" : s.kind === "help" ? "Go: not connected" : `Go: ${s.msg}`
+          return <text fg={s.kind === "loading" ? mu : context.theme.text.feedback.warning.base}>{text}</text>
         }
-
-        if (s.kind === "help") {
-          return (
-            <box flexDirection="column">
-              <text fg={warn}>⚠ OpenCode Go</text>
-              <text fg={mu}>No credential found</text>
-              <text fg={mu}>Sign in: opencode auth</text>
-              <text fg={mu}>or pin it in</text>
-              <text fg={mu}>opencode-quota/opencode-go.json</text>
-              <text fg={mu}>{'  {"apiKey": "oc_sk_…"}'}</text>
-            </box>
-          )
-        }
-
-        if (s.kind === "error") {
-          return (
-            <box flexDirection="column">
-              <text fg={warn}>⚠ OpenCode Go</text>
-              <text fg={mu}>{s.msg}</text>
-            </box>
-          )
-        }
-
-        const d = s.d
-        const monthly = d.windows.find((w) => w.key === "month")
-        const monthlyPct = monthly ? monthly.usagePercent : 0
-
         return (
-          <box flexDirection="column">
-            <box flexDirection="row" justifyContent="space-between" onMouseDown={toggle}>
-              <text fg={fg}>{e ? "▼" : "▶"} OpenCode Go</text>
-              <text fg={mu}>{fmtPct(monthlyPct)}</text>
-            </box>
-            {e && (
-              <box flexDirection="column">
-                {d.windows.map((w) => (
-                  <box flexDirection="column">
-                    <box flexDirection="row" justifyContent="space-between">
-                      <text fg={fg}>
-                        {circle(w.usagePercent)}
-                        {w.label}
-                      </text>
-                      <text fg={fg}>{fmtPct(w.usagePercent)} used</text>
-                    </box>
-                    <text fg={fg}>
-                      {barStr(w.usagePercent / 100, 8)} {fmtPct(w.usagePercent)}
-                    </text>
-                    <text fg={mu}>Reset {w.resetText}</text>
-                  </box>
-                ))}
-                <text fg={mu}>key · {s.source}</text>
+          <box flexDirection="row">
+            <text fg={fg}>Go</text>
+            {s.d.windows.map((w, i) => (
+              <box flexDirection="row">
+                <text fg={mu}>{i === 0 ? " " : " · "}</text>
+                <text fg={heat(w.usagePercent, context.theme.text.feedback.success.base, context.theme.text.feedback.warning.base, context.theme.text.feedback.error.base)}>●</text>
+                <text fg={fg}> {SHORT[w.key]} {Math.round(w.usagePercent)}%</text>
               </box>
-            )}
+            ))}
           </box>
         )
       },

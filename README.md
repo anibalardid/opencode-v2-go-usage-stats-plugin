@@ -10,20 +10,10 @@ configure once you are signed in. A console-cookie transport is kept as a
 fallback.
 
 ```
-▼ OpenCode Go                    48%
-  Rolling                       3% used
-  ░░░░░░░░ 3%
-  🟡 Weekly                     5% used
-  ░░░░░░░░ 5%
-  Reset 6d 1h
-  Monthly                      48% used
-  ████░░░░ 48%
-  Reset 14d 15h
+Go ● 5h 3% · ● wk 5% · ● mo 48%
 ```
 
-- 🔴 red circle ≥ 80% · 🟡 yellow circle ≥ 50%
-- Refreshes every 3 minutes; self-heals after network errors
-- Click the header to collapse/expand (state is persisted)
+Percentages are **used** (the API `percent`, not remaining). The dot is green under 50%, warning from 50%, red from 80%. Refreshes every 3 minutes.
 
 > This is the **OpenCode 2** (`opencode2` / `@opencode/cli`) plugin, built on the
 > new V2 plugin API. The OpenCode 1 plugin lives in
